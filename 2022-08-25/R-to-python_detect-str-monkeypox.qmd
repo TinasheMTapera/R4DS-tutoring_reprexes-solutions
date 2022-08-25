@@ -1,0 +1,228 @@
+---
+title: "Python to R Task Translation"
+format:
+  html:
+    self-contained: true
+---
+
+The original function looks like this:
+
+```
+## function to detect and extract possible monkey pox related calls: pass in a tibble (df) as the argument
+monkey_pox_detect <- function(df) {
+  
+  ## implement some control flow
+  # - if argument is missing: break out of function and tell user "break" is really a print() execution
+  # - else move on to next flow structure
+  # - if the argument passed in not a tibble/df object, tell user invalid argument passed
+  # - else execute the piped operations
+  # - str_detect() on col(A2, A8, A9, A10, A11) to detect instance of monkey pox mentioned
+  # - group by date then aggregate
+  
+  if (missing(df)) {
+    print("No argument passed into the function.")
+  } else {
+    if (!is_tibble(df)) {
+      print("Invalid argument type passed.")
+    } else {
+      df = df %>%
+        mutate(mp_detect1 = case_when(
+          str_detect(A2, pattern = "monkeypox status: monkeypox related") ~ "YES",
+          TRUE ~ "NO"),
+          mp_detect2 = case_when(
+            str_detect(A9, pattern = "monkey pox|pox|mpx|monkey|monkeypox") ~ "YES",
+            TRUE ~ "NO"),
+          mp_detect3 = case_when(
+            str_detect(A10, pattern = "monkey pox|pox|mpx|monkey|monkeypox") ~ "YES",
+            TRUE ~ "NO"),
+          mp_detect4 = case_when(
+            str_detect(A11, pattern = "monkey pox|pox|mpx|monkey|monkeypox") ~ "YES",
+            TRUE ~ "NO")) %>%
+        filter(mp_detect1 == "YES" | mp_detect2 == "YES" | mp_detect3 == "YES" | mp_detect4 == "YES") %>%
+        group_by(date) %>%
+        summarize(calls = n()) %>%
+        print()
+      
+      return(df)
+    }
+  }
+}
+```
+::: {.callout-note}
+Note that this prints once and then returns a df, so there's two tibbles
+:::
+
+In python we need the following external packages:
+
+- `openpyxl`
+
+- `pandas`
+
+- `siuba` #for dplyr-like syntax
+
+```{python}
+import pandas as pd # openpyxl is imported implicitly
+
+df = pd.ExcelFile("sample_data.xlsx")
+dfs = {sheet_name: df.parse(sheet_name) for sheet_name in df.sheet_names}
+
+input_df = dfs["sample_data"]
+```
+
+
+```{python}
+input_df
+```
+
+Let's first define a function for this read in step (this step is not guaranteed to be reproducible):
+
+
+```{python}
+def read_in(path, target_sheet="sample_data"):
+    import os
+    try:
+
+      # a checker for correct path
+      if not os.path.exists(path):
+        raise RuntimeError
+
+      #it passed, so open it
+      opened = pd.ExcelFile(path)
+      dfs = {
+          sheet_name: opened.parse(sheet_name) for sheet_name in opened.sheet_names
+      }
+      output = dfs[target_sheet]
+
+      # a check for the dataframe columns
+      expected_cols = ["date", "A2", "A9", "A10", "A11"]
+
+      assert [x in output.columns for x in expected_cols]
+
+      return output
+    
+    # if the path is wrong
+    except RuntimeError as e:
+      print("Could not open file \"{}\" Please check your paths".format(path), e)
+
+    # if the columns aren't found
+    except AssertionError as e:
+      print("The required columns were not found")
+```
+
+Demo:
+
+```{python}
+read_in("sample_data.xlsx")
+```
+
+Now the main function:
+
+```{python}
+from siuba import mutate, group_by, summarize, _
+
+def monkey_pox_detect(input_path):
+    
+    # we put the reader and validator 
+    # in a separate function to make
+    # it easier to debug
+    df = read_in(input_path, target_sheet = "sample_data")
+
+    # now the logic in your case_when...
+    # set a target regex so you don't repeat yourself
+    target_regex = "monkey pox|pox|mpx|monkey|monkeypox"
+
+    # I'm trying out siuba to get dplyr's mutate here
+    output_df = (df
+      >> mutate(
+
+        # this first mutate gathers a bunch of true/falses
+
+        # in python, to detect a string from a column,
+        # you have to first call the column, dynamically
+        # convert it to a vec of strings with `.str`,
+        # then use the `.contains()` method on it
+        # (like str_contains)
+
+        mp_detect1 = _.A2.str.contains("monkeypox status: monkeypox related"),
+        mp_detect2 = _.A9.str.contains(target_regex),
+        mp_detect3 = _.A10.str.contains(target_regex),
+        mp_detect4 = _.A11.str.contains(target_regex)
+        ) # end case when logic
+    )
+
+    # lastly, use pandas .any() to check if there
+    # are any trues in our set of `mp_detect*`s
+
+    # traditional pandas follows
+
+    output_df["detected"] = output_df[["mp_detect1", "mp_detect2", "mp_detect3", "mp_detect4"]].any(axis=1)
+  
+    # now we group by and count
+    output_counts = output_df[["date", "detected"]].groupby("date").value_counts("detected").reset_index(name="counts")
+
+    # make it look like the R output
+    return output_counts[output_counts.detected ==  True]
+
+```
+
+```{python}
+monkey_pox_detect("sample_data.xlsx")
+```
+
+The full functionality without comments:
+
+```{python}
+import os
+import pandas as pd
+from siuba import mutate, group_by, summarize, _
+
+def read_in(path, target_sheet="sample_data"):
+    import os
+    try:
+
+      if not os.path.exists(path):
+        raise RuntimeError
+
+      opened = pd.ExcelFile(path)
+      dfs = {
+          sheet_name: opened.parse(sheet_name) for sheet_name in opened.sheet_names
+      }
+      output = dfs[target_sheet]
+
+      expected_cols = ["date", "A2", "A9", "A10", "A11"]
+
+      assert [x in output.columns for x in expected_cols]
+
+      return output
+    
+    except RuntimeError as e:
+      print("Could not open file \"{}\" Please check your paths".format(path), e)
+
+    except AssertionError as e:
+      print("The required columns were not found")
+
+def monkey_pox_detect(input_path):
+
+    df = read_in(input_path, target_sheet = "sample_data")
+
+    target_regex = "monkey pox|pox|mpx|monkey|monkeypox"
+
+    output_df = (df
+      >> mutate(
+        mp_detect1 = _.A2.str.contains("monkeypox status: monkeypox related"),
+        mp_detect2 = _.A9.str.contains(target_regex),
+        mp_detect3 = _.A10.str.contains(target_regex),
+        mp_detect4 = _.A11.str.contains(target_regex)
+        )
+    )
+
+    output_df["detected"] = output_df[["mp_detect1", "mp_detect2", "mp_detect3", "mp_detect4"]].any(axis=1)
+    output_counts = output_df[["date", "detected"]].groupby("date").value_counts("detected").reset_index(name="counts")
+
+    return output_counts[output_counts.detected ==  True]
+
+monkey_pox_detect("sample_data.xlsx")
+```
+
+
+
