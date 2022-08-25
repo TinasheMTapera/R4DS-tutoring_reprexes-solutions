@@ -225,4 +225,14 @@ monkey_pox_detect("sample_data.xlsx")
 ```
 
 
+A (hopefully) portable script is available in `monkey_pox_detect.py`. 
 
+For portability, I recommend using a package manager like `pip`. See [here]() for installation.
+
+Then, download the Python script and `requirements.txt` in the same directory, and in that directory run:
+
+```
+pip3 install -r requirements.txt
+```
+
+This will install the `pandas` and `siuba` packages I used for you.
