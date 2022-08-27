@@ -52,9 +52,11 @@ calc_overlaps <- function(interval_df) {
         overlap = intersect(subscription_duration, compare
           )
         ) %>%
-      transmute(subscription_id = x,
+      mutate(
         overlaps_with = subscription_id, 
-        overlap_duration = overlap %>% as.duration()) 
+        overlap_duration = overlap %>% as.duration(),
+        subscription_id = x) %>%
+      select(subscription_id, overlaps_with, overlap_duration)
   }) 
   overlap_df
 }
